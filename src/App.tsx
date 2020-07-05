@@ -8,28 +8,30 @@ import { switchMap, tap } from 'rxjs/operators';
 import './App.css';
 import { isNull } from 'util';
 
+
 const App: React.FC = () => {
   const [newTodo, setNewTodo] = useState('')
-  const [ todos, setTodos ] = useState<any[]>();
+  const [todos, setTodos] = useState<any[]>();
   const [user, setUser] = useState<firebase.User>();
+  const [error, setError] = useState('');
   const ref = firebase.firestore().collection('todos');
   const authState$ = authState(firebase.auth())
-  useEffect(() => {
-    authState$.pipe(
-      tap(user => setUser(user)),
-      switchMap(
-        user => {
-          if (!isNull(user)) {
-            const query = ref.where('user', '==', user.uid)
-            return collectionData(query, 'taskId');
-          }
-          return [];
+  const sub = authState$.pipe(
+    tap(u => setUser(u)),
+    switchMap(
+      user => {
+        if (!isNull(user)) {
+          const query = ref.where('user', '==', user.uid)
+          return collectionData(query, 'taskId');
         }
-      ),
-    ).subscribe(
-      docs => setTodos(docs)
+        return [];
+      }
     )
-  })
+  )
+  useEffect(() => {
+    sub.subscribe(setTodos)
+    // return sub.subscribe(setTodos).unsubscribe()
+  }, [sub])
   const login = () => {
     let provider = new (firebase.auth).GoogleAuthProvider();
     firebase.auth().signInWithPopup(provider);
@@ -41,8 +43,14 @@ const App: React.FC = () => {
     setNewTodo(e.currentTarget.value);
   }
   const AddTodo = (todo: string) => {
-    ref.add({ user: user?.uid, text: todo });
-    setNewTodo('');
+    if (todo.length) {
+      ref.add({ user: user?.uid, text: todo });
+      setNewTodo('');
+      setError('');
+    }
+    else {
+      setError('Please Enter A valid string')
+    }
   }
   const removeTodo = (uid: string) => {
     ref.doc(uid).delete();
@@ -56,7 +64,8 @@ const App: React.FC = () => {
       </div>
       { user?
       <div  className="main center column">
-        <h2>Hi {user.displayName}</h2>
+        <h2>Hi {user?.displayName}</h2>
+        {error && <h2>{error}</h2>}
         <ul className="center column">
           {todos?.map(todo => (
             <li key={todo.text} className="item">
