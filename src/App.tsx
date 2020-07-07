@@ -1,37 +1,52 @@
 // fireship RxFire
 import * as React from 'react';
-import { useState, useEffect, FormEvent } from 'react';
+import { useState, useEffect } from 'react';
 import firebase from './firebase';
 import { authState } from 'rxfire/auth';
 import { collectionData } from 'rxfire/firestore';
-import { switchMap, tap } from 'rxjs/operators';
+import { switchMap, filter } from 'rxjs/operators';
 import './App.css';
-import { isNull } from 'util';
+import { todo, Todos } from './Todos';
+import { NewTodo } from './NewTodo';
+
 
 
 const App: React.FC = () => {
-  const [newTodo, setNewTodo] = useState('')
-  const [todos, setTodos] = useState<any[]>();
+  const [todos, setTodos] = useState<todo[]>();
   const [user, setUser] = useState<firebase.User>();
   const [error, setError] = useState('');
   const ref = firebase.firestore().collection('todos');
   const authState$ = authState(firebase.auth())
-  const sub = authState$.pipe(
-    tap(u => setUser(u)),
-    switchMap(
-      user => {
-        if (!isNull(user)) {
-          const query = ref.where('user', '==', user.uid)
-          return collectionData(query, 'taskId');
-        }
-        return [];
-      }
-    )
-  )
   useEffect(() => {
-    sub.subscribe(setTodos)
-    // return sub.subscribe(setTodos).unsubscribe()
-  }, [sub])
+    authState$.subscribe(u => setUser(u))
+  }, [authState$])
+  useEffect(() => {
+    console.log(todos);
+    const samedocs = (docs: todo[]) => {
+      let arr: boolean[] = []
+      docs.forEach(doc => {
+        todos?.forEach(todo => {
+          if (todo.taskId === doc.taskId) {
+            arr.push(true);
+          } else arr.push(false)
+        })
+      })
+      return arr.includes(false)
+    }
+    authState$.pipe(
+      filter(u => u !== null),
+      switchMap(
+        user => {
+          const query = ref.where('user', '==', user.uid)
+          return collectionData<todo>(query, 'taskId');
+        }
+      )
+    ).subscribe((docs) => {
+      if (!samedocs(docs)) {
+        setTodos(docs)
+      } else return;
+    })
+  })
   const login = () => {
     let provider = new (firebase.auth).GoogleAuthProvider();
     firebase.auth().signInWithPopup(provider);
@@ -39,13 +54,10 @@ const App: React.FC = () => {
   const logout = () => {
     firebase.auth().signOut();
   }
-  const handleInputChange = (e: FormEvent<HTMLInputElement>) => {
-    setNewTodo(e.currentTarget.value);
-  }
-  const AddTodo = (todo: string) => {
+  
+  const addTodo = (todo: string) => {
     if (todo.length) {
       ref.add({ user: user?.uid, text: todo });
-      setNewTodo('');
       setError('');
     }
     else {
@@ -67,17 +79,9 @@ const App: React.FC = () => {
         <h2>Hi {user?.displayName}</h2>
         {error && <h2>{error}</h2>}
         <ul className="center column">
-          {todos?.map(todo => (
-            <li key={todo.text} className="item">
-              <h3>{todo.text}</h3>
-              <button className="item-button" onClick={() => removeTodo(todo.taskId)}>&#x274C;</button>
-            </li>
-          ))}
+          <Todos todos={todos} removeTodo={removeTodo} />
         </ul>
-        <div className="center row">
-          <input required autoComplete="off" name="Add Todo" value={newTodo} onChange={(e) => handleInputChange(e)} />
-          <button onClick={() => AddTodo(newTodo)}>Add Todo</button>
-        </div>
+        <NewTodo addTodo={addTodo}/>
         <button onClick={() => logout()}>Log out</button>
       </div >
       : 
